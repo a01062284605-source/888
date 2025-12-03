@@ -1,0 +1,8 @@
+{
+  "name": "Mission Bridge",
+  "description": "A gentle social mission app helping users build confidence through small steps. Earn credits to customize your experience.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
