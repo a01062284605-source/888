@@ -1,41 +1,511 @@
 <!DOCTYPE html>
 <html lang="ko">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Mission Bridge</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <style>
-      body {
-        font-family: 'Noto Sans KR', sans-serif;
-        overscroll-behavior: none;
-      }
-      /* Custom scrollbar for webkit */
-      ::-webkit-scrollbar {
-        width: 6px;
-      }
-      ::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      ::-webkit-scrollbar-thumb {
-        background-color: rgba(0, 0, 0, 0.1);
-        border-radius: 20px;
-      }
-    </style>
-  <script type="importmap">
+    <script type="importmap">
 {
   "imports": {
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0"
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/"
   }
 }
 </script>
+    <style>
+        body { 
+            font-family: 'Noto Sans KR', sans-serif; 
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior: none;
+        }
+        /* Custom Animations */
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in-up { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+        @keyframes bounceSlight { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+        .animate-bounce-slight { animation: bounceSlight 2s infinite ease-in-out; }
+
+        /* Hide scrollbar for clean UI */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
 </head>
-  <body class="bg-gray-50 text-gray-900 h-screen w-screen overflow-hidden">
-    <div id="root" class="h-full w-full"></div>
-  </body>
+<body class="bg-gray-50 text-gray-900 h-screen w-screen overflow-hidden select-none">
+    
+    <!-- App Container -->
+    <div id="app" class="h-full w-full flex flex-col relative transition-colors duration-500">
+        <!-- Content will be injected by JS -->
+    </div>
+
+    <!-- Logic -->
+    <script type="module">
+        import { GoogleGenAI, Type } from "@google/genai";
+
+        // --- 1. CONFIGURATION & STATE ---
+
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+        // Initial Data
+        const THEMES = [
+            { id: 'default', name: '기본 (Blue)', primary: 'bg-blue-500', secondary: 'bg-blue-50', accent: 'text-blue-600', bg: 'bg-gray-50', price: 0, desc: '깔끔하고 시원한 기본 테마' },
+            { id: 'sakura', name: '봄날의 벚꽃', primary: 'bg-pink-400', secondary: 'bg-pink-50', accent: 'text-pink-500', bg: 'bg-rose-50', price: 300, desc: '따뜻하고 포근한 느낌' },
+            { id: 'forest', name: '새벽 숲', primary: 'bg-emerald-600', secondary: 'bg-emerald-50', accent: 'text-emerald-700', bg: 'bg-stone-50', price: 500, desc: '눈이 편안해지는 자연의 색' },
+            { id: 'night', name: '고요한 밤', primary: 'bg-indigo-600', secondary: 'bg-slate-800', accent: 'text-indigo-400', bg: 'bg-slate-900', price: 800, desc: '차분한 다크 모드 스타일' }
+        ];
+
+        const STICKERS = [
+            { id: 'cat', emoji: '🐱', name: '고양이', price: 100 },
+            { id: 'plant', emoji: '🪴', name: '화분', price: 150 },
+            { id: 'star', emoji: '⭐', name: '별', price: 200 },
+            { id: 'trophy', emoji: '🏆', name: '트로피', price: 500 }
+        ];
+
+        // Reactive State
+        let state = {
+            tab: 'home',
+            credits: 100,
+            completedCount: 0,
+            activeThemeId: 'default',
+            unlockedThemes: ['default'],
+            unlockedStickers: [],
+            
+            // Missions
+            availableMissions: [],
+            activeMissions: [],
+            isLoadingMissions: false,
+            
+            // Social Feed
+            feed: [
+                { id: 1, user: '익명의 부엉이', mission: '햇빛 보며 5분 걷기', text: '오늘 아침 햇살 받으며 5분 걷기 성공!', reflection: '상쾌했어요!', likes: 12, time: '10분 전' },
+                { id: 2, user: '용기낸 토끼', mission: '점원에게 인사하기', text: '정말 용기 있는 행동이었어요! 멋집니다.', reflection: '떨렸지만 눈 딱 감고 했어요', likes: 25, time: '1시간 전' },
+            ],
+
+            // UI Interaction
+            toast: null,
+            verifyingMission: null, // Mission object being verified
+            reflectionText: '',
+            isVerifyingReq: false
+        };
+
+        // --- 2. GEMINI SERVICES ---
+
+        async function fetchMissions() {
+            updateState({ isLoadingMissions: true });
+            try {
+                const response = await ai.models.generateContent({
+                    model: "gemini-2.5-flash",
+                    contents: "Generate 3 different 'small step' missions for social anxiety or hikikomori users. JSON output.",
+                    config: {
+                        systemInstruction: `You are a gentle life coach. Create 3 missions:
+                        - Easy, under 15 mins.
+                        - Categories: Social, Health, Organization.
+                        - Output JSON array with fields: id (string), title (string), description (string), difficulty (easy/medium), credits (number), category (string).`,
+                        responseMimeType: "application/json"
+                    }
+                });
+                
+                const json = JSON.parse(response.text);
+                updateState({ availableMissions: json, isLoadingMissions: false });
+            } catch (e) {
+                console.error(e);
+                // Fallback
+                updateState({
+                    availableMissions: [
+                        { id: 'f1', title: '창문 1분 열기', description: '환기를 시키며 바깥 공기를 마셔보세요.', credits: 50, category: 'Health', difficulty: 'easy' },
+                        { id: 'f2', title: '책상 위 물건 1개 정리', description: '작은 것부터 시작해요.', credits: 30, category: 'Org', difficulty: 'easy' },
+                        { id: 'f3', title: '따뜻한 물 마시기', description: '몸을 따뜻하게 데워주세요.', credits: 40, category: 'Health', difficulty: 'easy' }
+                    ],
+                    isLoadingMissions: false
+                });
+            }
+        }
+
+        async function fetchEncouragement(missionTitle, reflection) {
+            try {
+                const prompt = `User completed mission "${missionTitle}". Reflection: "${reflection}". Give a 1-sentence warm Korean encouragement.`;
+                const res = await ai.models.generateContent({
+                    model: "gemini-2.5-flash",
+                    contents: prompt
+                });
+                return res.text;
+            } catch {
+                return "정말 수고하셨어요! 멋진 한 걸음입니다.";
+            }
+        }
+
+        // --- 3. CORE LOGIC ---
+
+        function updateState(updates) {
+            state = { ...state, ...updates };
+            render();
+        }
+
+        function showToast(msg) {
+            updateState({ toast: msg });
+            setTimeout(() => updateState({ toast: null }), 3000);
+        }
+
+        function acceptMission(mission) {
+            if (state.activeMissions.find(m => m.id === mission.id)) return showToast("이미 진행 중입니다.");
+            
+            updateState({
+                activeMissions: [...state.activeMissions, mission],
+                availableMissions: state.availableMissions.filter(m => m.id !== mission.id),
+                tab: 'home'
+            });
+            showToast("미션이 추가되었습니다!");
+        }
+
+        async function completeMission() {
+            if (!state.verifyingMission) return;
+            
+            updateState({ isVerifyingReq: true });
+            
+            const encouragement = await fetchEncouragement(state.verifyingMission.title, state.reflectionText);
+            
+            const newPost = {
+                id: Date.now(),
+                user: '나 (Me)',
+                mission: state.verifyingMission.title,
+                text: encouragement,
+                reflection: state.reflectionText,
+                likes: 0,
+                time: '방금 전'
+            };
+
+            updateState({
+                credits: state.credits + state.verifyingMission.credits,
+                completedCount: state.completedCount + 1,
+                activeMissions: state.activeMissions.filter(m => m.id !== state.verifyingMission.id),
+                feed: [newPost, ...state.feed],
+                verifyingMission: null,
+                reflectionText: '',
+                isVerifyingReq: false
+            });
+            
+            showToast(`미션 완료! +${state.verifyingMission.credits}C`);
+        }
+
+        // --- 4. RENDER FUNCTIONS ---
+
+        const app = document.getElementById('app');
+
+        function getTheme() {
+            return THEMES.find(t => t.id === state.activeThemeId) || THEMES[0];
+        }
+
+        function render() {
+            const theme = getTheme();
+            const isDark = theme.id === 'night';
+            const txt = isDark ? 'text-white' : 'text-gray-900';
+            const txtSub = isDark ? 'text-gray-400' : 'text-gray-600';
+            const cardBg = isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-100';
+
+            // Apply Theme Background
+            document.body.className = `${theme.bg} ${txt} h-screen w-screen overflow-hidden select-none transition-colors duration-500`;
+
+            let contentHtml = '';
+
+            // HEADER
+            contentHtml += `
+                <header class="fixed top-0 w-full z-40 bg-white/10 backdrop-blur-md border-b ${isDark ? 'border-white/10' : 'border-black/5'}">
+                    <div class="max-w-md mx-auto px-4 h-14 flex items-center justify-between">
+                        <span class="font-bold text-lg tracking-tight ${theme.accent}">Mission Bridge</span>
+                        <div class="flex items-center gap-1.5 px-3 py-1 rounded-full ${isDark ? 'bg-slate-800' : 'bg-white'} shadow-sm border ${isDark ? 'border-slate-700' : 'border-gray-200'}">
+                            <i data-lucide="coins" class="w-4 h-4 text-yellow-500 fill-yellow-500"></i>
+                            <span class="font-bold text-sm ${isDark ? 'text-gray-200' : 'text-gray-700'}">${state.credits.toLocaleString()} C</span>
+                        </div>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto pt-14 pb-20 no-scrollbar w-full max-w-md mx-auto">
+            `;
+
+            // TABS
+            if (state.tab === 'home') {
+                contentHtml += `
+                    <div class="p-4 space-y-6 animate-fade-in">
+                        <!-- Dashboard Card -->
+                        <div class="${theme.primary} rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
+                            <div class="relative z-10">
+                                <h2 class="text-2xl font-bold mb-1">오늘의 여정</h2>
+                                <p class="opacity-90 text-sm mb-4">작은 성공이 모여 큰 변화를 만듭니다.</p>
+                                <div class="flex items-end gap-2">
+                                    <span class="text-4xl font-bold">${state.completedCount}</span>
+                                    <span class="mb-1.5 opacity-80">개의 미션 완료</span>
+                                </div>
+                            </div>
+                            <!-- Stickers Overlay -->
+                            <div class="absolute right-0 bottom-0 p-4 flex gap-1 flex-wrap justify-end opacity-90 w-2/3 pointer-events-none">
+                                ${state.unlockedStickers.map((sid, i) => {
+                                    const s = STICKERS.find(x => x.id === sid);
+                                    return `<span class="text-3xl animate-bounce-slight" style="animation-delay: ${i * 0.1}s">${s.emoji}</span>`;
+                                }).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Active Missions -->
+                        <div>
+                            <h3 class="font-bold text-lg mb-3">진행 중인 미션</h3>
+                            ${state.activeMissions.length === 0 ? `
+                                <div class="text-center py-8 border-2 border-dashed rounded-2xl ${isDark ? 'border-slate-700 text-slate-500' : 'border-gray-200 text-gray-400'}">
+                                    <p>진행 중인 미션이 없습니다.</p>
+                                    <button onclick="window.setTab('missions')" class="mt-3 px-4 py-2 rounded-full text-xs font-bold ${theme.secondary} ${theme.accent}">미션 받기</button>
+                                </div>
+                            ` : state.activeMissions.map(m => `
+                                <div class="${cardBg} p-5 rounded-2xl shadow-sm border mb-3">
+                                    <div class="flex justify-between mb-2">
+                                        <span class="text-xs font-bold ${theme.accent} ${theme.secondary} px-2 py-0.5 rounded">${m.category}</span>
+                                        <span class="text-xs font-bold text-yellow-500">+${m.credits} C</span>
+                                    </div>
+                                    <h4 class="font-bold text-lg mb-1">${m.title}</h4>
+                                    <p class="text-sm ${txtSub} mb-4">${m.description}</p>
+                                    <button onclick="window.openVerify('${m.id}')" class="w-full py-3 rounded-xl font-bold text-white shadow flex items-center justify-center gap-2 ${theme.primary} active:scale-95 transition-transform">
+                                        <i data-lucide="check-circle-2" class="w-4 h-4"></i> 완료 인증하기
+                                    </button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            } else if (state.tab === 'missions') {
+                contentHtml += `
+                    <div class="p-4 space-y-4 animate-fade-in">
+                        <div class="flex justify-between items-center">
+                            <h2 class="text-xl font-bold">추천 미션</h2>
+                            <button onclick="window.refreshMissions()" class="p-2 rounded-full border ${isDark ? 'border-slate-700 hover:bg-slate-800' : 'border-gray-200 hover:bg-gray-50'}">
+                                <i data-lucide="refresh-cw" class="w-5 h-5 ${state.isLoadingMissions ? 'animate-spin' : ''}"></i>
+                            </button>
+                        </div>
+                        
+                        ${state.isLoadingMissions ? `
+                            <div class="py-20 text-center ${txtSub}">
+                                <div class="w-8 h-8 border-4 border-t-transparent ${theme.accent.replace('text','border')} rounded-full animate-spin mx-auto mb-3"></div>
+                                AI가 맞춤 미션을 생각 중입니다...
+                            </div>
+                        ` : state.availableMissions.map(m => `
+                            <div class="${cardBg} p-5 rounded-2xl shadow-sm border relative group hover:shadow-md transition-all">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <h4 class="font-bold text-lg">${m.title}</h4>
+                                        <p class="text-xs mt-1 ${txtSub}">${m.difficulty} • ${m.category}</p>
+                                    </div>
+                                    <div class="bg-yellow-50 text-yellow-600 px-2 py-1 rounded text-xs font-bold">+${m.credits} C</div>
+                                </div>
+                                <p class="text-sm ${txtSub} mt-3 mb-4 leading-relaxed">${m.description}</p>
+                                <button onclick="window.doAccept('${m.id}')" class="w-full py-2.5 rounded-xl font-medium border-2 transition-colors ${isDark ? 'border-slate-600 text-slate-300' : 'border-gray-100 text-gray-600'} hover:bg-black/5">
+                                    도전하기
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else if (state.tab === 'social') {
+                contentHtml += `
+                    <div class="p-4 space-y-4 animate-fade-in">
+                        <h2 class="text-xl font-bold">응원 브릿지</h2>
+                        ${state.feed.map(post => `
+                            <div class="${cardBg} p-4 rounded-2xl shadow-sm border">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-300 to-purple-300 flex items-center justify-center text-white text-xs font-bold">
+                                        ${post.user[0]}
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-bold">${post.user}</p>
+                                        <p class="text-[10px] ${txtSub}">${post.time}</p>
+                                    </div>
+                                </div>
+                                <div class="text-xs inline-block px-2 py-0.5 rounded mb-3 ${theme.secondary} ${theme.accent}">미션: ${post.mission}</div>
+                                ${post.reflection ? `<div class="mb-3 p-3 rounded-xl text-sm italic ${isDark ? 'bg-slate-700/50' : 'bg-gray-50'}">"${post.reflection}"</div>` : ''}
+                                <div class="flex gap-2 items-start">
+                                    <i data-lucide="sparkles" class="w-4 h-4 text-yellow-400 fill-yellow-400 mt-0.5 shrink-0"></i>
+                                    <p class="text-sm font-medium">${post.text}</p>
+                                </div>
+                                <div class="mt-3 pt-3 border-t ${isDark ? 'border-slate-700' : 'border-gray-100'} flex justify-end">
+                                    <button class="text-xs font-bold text-gray-400 flex items-center gap-1 hover:text-red-400 transition-colors">
+                                        <span>❤️</span> ${post.likes} 응원
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else if (state.tab === 'shop') {
+                contentHtml += `
+                    <div class="p-4 space-y-8 animate-fade-in">
+                        <!-- Wallet -->
+                        <div class="${theme.primary} text-white p-6 rounded-3xl shadow-lg flex justify-between items-center">
+                            <div>
+                                <p class="opacity-80 text-sm">내 지갑</p>
+                                <p class="text-3xl font-bold">${state.credits.toLocaleString()} C</p>
+                            </div>
+                            <i data-lucide="shopping-bag" class="w-10 h-10 opacity-50"></i>
+                        </div>
+
+                        <!-- Themes -->
+                        <div>
+                            <h3 class="font-bold text-lg mb-3">테마</h3>
+                            <div class="space-y-3">
+                                ${THEMES.map(t => {
+                                    const unlocked = t.price === 0 || state.unlockedThemes.includes(t.id);
+                                    const active = state.activeThemeId === t.id;
+                                    return `
+                                    <div class="${cardBg} p-4 rounded-2xl border shadow-sm flex items-center gap-3 active:scale-[0.99] transition-transform">
+                                        <div class="w-10 h-10 rounded-full ${t.primary} shadow-sm shrink-0"></div>
+                                        <div class="flex-1 min-w-0">
+                                            <h4 class="font-bold truncate">${t.name}</h4>
+                                            <p class="text-xs ${txtSub} truncate">${t.desc}</p>
+                                        </div>
+                                        <div>
+                                            ${active ? `<span class="text-xs font-bold px-3 py-1.5 rounded-full bg-gray-100 text-gray-500">사용 중</span>` : 
+                                              unlocked ? `<button onclick="window.useTheme('${t.id}')" class="text-xs font-bold px-3 py-1.5 rounded-full ${theme.primary} text-white">적용</button>` :
+                                              `<button onclick="window.buyTheme('${t.id}')" class="text-xs font-bold px-3 py-1.5 rounded-full bg-yellow-100 text-yellow-700 flex items-center gap-1">${t.price} <i data-lucide="lock" class="w-3 h-3"></i></button>`
+                                            }
+                                        </div>
+                                    </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Stickers -->
+                        <div>
+                            <h3 class="font-bold text-lg mb-3">스티커</h3>
+                            <div class="grid grid-cols-2 gap-3">
+                                ${STICKERS.map(s => {
+                                    const has = state.unlockedStickers.includes(s.id);
+                                    return `
+                                    <button onclick="${has ? '' : `window.buySticker('${s.id}')`}" class="${cardBg} p-4 rounded-2xl border flex flex-col items-center gap-2 ${has ? 'opacity-80' : 'hover:shadow-md active:scale-95'} transition-all">
+                                        <span class="text-4xl drop-shadow-sm">${s.emoji}</span>
+                                        <span class="text-sm font-bold">${s.name}</span>
+                                        ${has ? `<span class="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">보유중</span>` :
+                                          `<span class="text-xs font-bold bg-yellow-50 text-yellow-600 px-2 py-1 rounded flex items-center gap-1">${s.price} C</span>`
+                                        }
+                                    </button>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            contentHtml += `</main>`;
+
+            // NAVIGATION
+            contentHtml += `
+                <nav class="fixed bottom-0 w-full max-w-md left-0 right-0 mx-auto ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} border-t pb-safe">
+                    <div class="flex justify-around items-center h-16">
+                        ${['home', 'missions', 'social', 'shop'].map(t => `
+                            <button onclick="window.setTab('${t}')" class="flex flex-col items-center justify-center w-full h-full ${state.tab === t ? theme.accent : 'text-gray-400'}">
+                                <div class="p-1 transition-transform ${state.tab === t ? 'scale-110' : ''}">
+                                    <i data-lucide="${t === 'home' ? 'home' : t === 'missions' ? 'list-checks' : t === 'social' ? 'message-circle-heart' : 'shopping-bag'}" class="w-6 h-6"></i>
+                                </div>
+                                <span class="text-[10px] font-medium mt-0.5 capitalize">${t}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                </nav>
+            `;
+
+            // MODAL
+            if (state.verifyingMission) {
+                contentHtml += `
+                    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+                        <div class="${cardBg} w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-fade-in-up">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-lg font-bold">미션 완료</h3>
+                                <button onclick="window.closeVerify()" class="p-1"><i data-lucide="x" class="w-5 h-5 text-gray-400"></i></button>
+                            </div>
+                            <p class="text-sm ${txtSub} mb-1">미션: <span class="font-bold ${theme.accent}">${state.verifyingMission.title}</span></p>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium mb-2">기분이 어떠셨나요?</label>
+                                <textarea id="reflectionInput" placeholder="짧게 기록을 남겨보세요..." 
+                                    class="w-full p-3 rounded-xl border ${isDark ? 'bg-slate-700 border-slate-600' : 'bg-gray-50 border-gray-200'} focus:outline-none resize-none h-24 text-sm"
+                                >${state.reflectionText}</textarea>
+                            </div>
+                            <button onclick="window.doComplete()" ${state.isVerifyingReq ? 'disabled' : ''} class="w-full py-3 rounded-xl font-bold text-white shadow flex items-center justify-center gap-2 ${theme.primary} ${state.isVerifyingReq ? 'opacity-70' : ''}">
+                                ${state.isVerifyingReq ? '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i>' : '<span>완료 확인</span>'}
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // TOAST
+            if (state.toast) {
+                contentHtml += `
+                    <div class="fixed top-20 left-1/2 transform -translate-x-1/2 bg-gray-900/90 text-white px-5 py-2.5 rounded-full shadow-xl z-[60] animate-fade-in-up flex items-center gap-2 text-sm font-medium whitespace-nowrap">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-yellow-300"></i> ${state.toast}
+                    </div>
+                `;
+            }
+
+            app.innerHTML = contentHtml;
+            
+            // Re-bind Textarea if modal exists
+            if(state.verifyingMission) {
+                const el = document.getElementById('reflectionInput');
+                if(el) {
+                    el.addEventListener('input', (e) => state.reflectionText = e.target.value);
+                    el.focus();
+                }
+            }
+
+            lucide.createIcons();
+        }
+
+        // --- 5. GLOBAL HANDLERS ---
+        
+        window.setTab = (t) => updateState({ tab: t });
+        
+        window.refreshMissions = fetchMissions;
+        
+        window.doAccept = (id) => {
+            const m = state.availableMissions.find(x => x.id === id);
+            if(m) acceptMission(m);
+        };
+        
+        window.openVerify = (id) => {
+            const m = state.activeMissions.find(x => x.id === id);
+            if(m) updateState({ verifyingMission: m, reflectionText: '' });
+        };
+        
+        window.closeVerify = () => updateState({ verifyingMission: null });
+        
+        window.doComplete = completeMission;
+
+        window.useTheme = (id) => {
+            updateState({ activeThemeId: id });
+            showToast("테마가 적용되었습니다.");
+        };
+
+        window.buyTheme = (id) => {
+            const t = THEMES.find(x => x.id === id);
+            if (state.credits < t.price) return showToast("크레딧이 부족합니다.");
+            updateState({ credits: state.credits - t.price, unlockedThemes: [...state.unlockedThemes, id] });
+            showToast(`${t.name} 구매 완료!`);
+        };
+
+        window.buySticker = (id) => {
+            const s = STICKERS.find(x => x.id === id);
+            if (state.credits < s.price) return showToast("크레딧이 부족합니다.");
+            updateState({ credits: state.credits - s.price, unlockedStickers: [...state.unlockedStickers, id] });
+            showToast("스티커를 획득했습니다!");
+        };
+
+        // --- INIT ---
+        render();
+        fetchMissions();
+
+    </script>
+</body>
 </html>
